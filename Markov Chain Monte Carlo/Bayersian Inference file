@@ -1,0 +1,314 @@
+suppressPackageStartupMessages({
+  library(rstan)
+  library(dplyer)
+  library(readr)
+  library(ggplot2)
+  library(tidyr)
+  library(purrr)
+})
+rstan_options(auto_write = TRUE)
+options(mc.cores = max(1, parallel::detectCores() - 1))
+
+# ---------------- PARAMETERS ----------------
+METHOD <- "mcmc"
+CHAINS <- 4
+ITER <- 20000
+WARMUP <- 1000
+VB_ITER <- 5000
+SEED <- 2025
+HORIZON <- 1
+
+OUT_DIR <- "outputs"
+FIG_DIR <- file.[ath("figures, "bayes")
+dir.create(OUT_DIR, showWarnings = FALSE, recursive = TRUE)
+dir.create(FIG_DIR, showWarnings = FALSE, recursive = TRUE)
+
+# ---------------- Choose micro / macro predictor variables (edit as needed) ----------------
+# These must be column names in data/df_scores.rds (case-sensitive). If empty, model uses only EFS_lag.
+MICRO_VARS <- c("gdp_growth", "inflation", "business_entry_cost", "firm_density") # example names
+# If your dataset has different column names, put them here. The script will drop missing ones.
+
+# ---------------- Load scored panel (produced by your pipeline) ----------------
+if (!file.exists("data/df_scores.rds")) stop("Run 2_compute_scores.R first to produce data/df_scores.rds")
+df_all <- readRDS("data/df_scores.rds") %>% as_tibble()
+
+# Select EFS column (PCA-weighted preferred)
+efs_col <- if ("EFS_pca" %in% names(df_all)) "EFS_pca" else if ("EFS_manual" %in% names(df_all)) "EFS_manual" else if ("EFS_eq" %in% names(df_all)) "EFS_eq" else stop("No EFS column found.")
+
+# Prepare dataset: ensure needed columns exist, create lag, and pick predictor columns present
+df <- df_all %>%
+  rename(iso = ISO_Code %??% "ISO_Code", country = Countries %??% "Countries") %>% # safe rename if present
+  mutate(year = as.integer(year)) %>%
+  select(iso, country, year, all_of(efs_col), everything()) %>%
+  rename(EFS = all_of(efs_col)) %>%
+  arrange(iso, year) %>%
+  group_by(iso) %>%
+  mutate(EFS_lag = lag(EFS)) %>%
+  ungroup()
+
+# Helper: safe selection operator (if rename above fails)
+`%??%` <- function(x, y) if (y %in% names(df_all)) y else x
+
+# Filter rows with lag (we need lag to model AR(1))
+df_model <- df %>% filter(!is.na(EFS) & !is.na(EFS_lag))
+
+# Detect which micro vars are actually present
+present_micro <- intersect(MICRO_VARS, names(df_model))
+if (length(MICRO_VARS) > 0 && length(present_micro) == 0) {
+  message("No specified MICRO_VARS found in data. Running model with only EFS_lag and hierarchical effects.")
+}
+if (length(present_micro) > 0) message("Using predictors: ", paste(present_micro, collapse = ", "))
+
+# Build design matrix X (center/scale predictors)
+if (length(present_micro) > 0) {
+  X_df <- df_model %>% select(all_of(present_micro))
+  # simple imputation: if NA in predictor, fill with group (iso) mean then global mean
+  X_df <- X_df %>% mutate(across(everything(), ~ ifelse(is.na(.), NA_real_, .)))
+  # Replace group NA with group mean, then global mean
+  tmp <- bind_cols(df_model %>% select(iso), X_df)
+  for (col in present_micro) {
+    tmp <- tmp %>% group_by(iso) %>%
+      mutate(!!col := ifelse(is.na(.data[[col]]), mean(.data[[col]], na.rm=TRUE), .data[[col]])) %>%
+      ungroup()
+    # fallback fill with global mean
+    tmp[[col]] <- ifelse(is.na(tmp[[col]]), mean(tmp[[col]], na.rm=TRUE), tmp[[col]])
+  }
+  # scale predictors
+  X_scaled <- tmp %>% select(all_of(present_micro)) %>% mutate(across(everything(), ~ scale(.)))
+  X_matrix <- as.matrix(X_scaled)
+  K <- ncol(X_matrix)
+} else {
+  # No predictors
+  X_matrix <- matrix(nrow = nrow(df_model), ncol = 0)
+  K <- 0
+}
+
+# Re-index countries to integer indices
+country_factor <- factor(df_model$iso)
+country_index <- as.integer(country_factor)
+C <- length(levels(country_factor))
+N <- nrow(df_model)
+
+# Create stand data list for Stan
+stan_data <- list(
+  N = N,
+  C = C,
+  K = K,
+  country = country_index,
+  EFS = as.numeric(df_model$EFS),
+  EFS_lag = as.numeric(df_model$EFS_lag),
+  X = if (K > 0) X_matrix else array(0, dim = c(N, 0))
+)
+
+# ---------------- STAN MODEL CODE ----------------
+stan_code <- "
+data {
+  int<lower=1> N;
+  int<lower=1> C;
+  int<lower=0> K;
+  int<lower=1,upper=C> country[N];
+  vector[N] EFS;
+  vector[N] EFS_lag;
+  matrix[N, K] X;
+}
+parameters {
+  vector[C] alpha_c;      // country intercepts
+  real alpha_0;           // global intercept
+  real phi;               // AR(1) coefficient
+  vector[K] beta;         // predictors
+  real<lower=0> sigma;
+  real<lower=0> tau;
+}
+model {
+  // Priors
+  alpha_c ~ normal(alpha_0, tau);
+  alpha_0 ~ normal(0, 1);
+  if (K > 0) beta ~ normal(0, 1);
+  phi ~ normal(0, 1);
+  sigma ~ cauchy(0, 1);
+  tau ~ cauchy(0, 1);
+
+  // Likelihood
+  for (n in 1:N)
+    EFS[n] ~ normal(alpha_c[country[n]] + phi * EFS_lag[n] + (K>0 ? X[n] * beta : 0), sigma);
+}
+generated quantities {
+  vector[N] EFS_pred;
+  for (n in 1:N)
+    EFS_pred[n] = normal_rng(alpha_c[country[n]] + phi * EFS_lag[n] + (K>0 ? X[n] * beta : 0), sigma);
+}
+"
+
+# Compile Stan model (this may take a moment first time)
+message("Compiling Stan model...")
+stan_mod <- rstan::stan_model(model_code = stan_code)
+
+# ---------------- FIT (MCMC or VB) ----------------
+if (tolower(METHOD) == "mcmc") {
+  message("Running full MCMC sampling (this may take a while)...")
+  fit <- rstan::sampling(stan_mod, data = stan_data, chains = CHAINS, iter = ITER, warmup = WARMUP, seed = SEED, control = list(adapt_delta=0.95))
+  fit_samples <- as.array(fit) # stanfit object
+} else if (tolower(METHOD) == "vb") {
+  message("Running Variational Bayes (fast, approx posterior; underestimates uncertainty)...")
+  fit <- rstan::vb(stan_mod, data = stan_data, iter = VB_ITER, seed = SEED)
+  # as.matrix gives approximate posterior draws
+  fit_samples <- as.matrix(fit)
+} else {
+  stop("METHOD must be 'mcmc' or 'vb'")
+}
+
+# ---------------- Extract posterior draws and compute predictive summaries ----------------
+# We want posterior draws of alpha_c, alpha_0, phi, beta (if present), sigma, tau.
+if (tolower(METHOD) == "mcmc") {
+  draws <- rstan::extract(fit)
+} else {
+  # vb returns matrices; use as.matrix and parse names
+  draws_mat <- as.matrix(fit)
+  draws <- list()
+  # Parse columns: rstan names vary; we'll use grep to extract parameters
+  # alpha_c[1] etc., phi, alpha_0, beta[1], sigma, tau
+  draws$alpha_c <- do.call(cbind, lapply(grep("^alpha_c\\[", colnames(draws_mat), value=TRUE), function(nm) draws_mat[, nm])) # draws x C
+  draws$alpha_0 <- draws_mat[, "alpha_0", drop=FALSE]
+  draws$phi <- draws_mat[, "phi", drop=FALSE]
+  if (K > 0) {
+    beta_cols <- grep("^beta\\[", colnames(draws_mat), value = TRUE)
+    draws$beta <- do.call(cbind, lapply(beta_cols, function(nm) draws_mat[, nm]))
+  } else draws$beta <- matrix(nrow = nrow(draws_mat), ncol = 0)
+  draws$sigma <- draws_mat[, "sigma", drop=FALSE]
+  draws$tau <- draws_mat[, "tau", drop=FALSE]
+  # convert to list format similar to sampling extract
+}
+
+# Build posterior predictive samples for each observation via draws (safe approach)
+# We'll compute posterior predictive mean & 95% intervals for EFS_pred as generated quantities (if available) or compute directly.
+if (tolower(METHOD) == "mcmc" && "EFS_pred" %in% names(draws)) {
+  efs_pred_draws <- draws$EFS_pred # draws x N
+} else {
+  # compute EFS_pred draws manually: for each draw, compute alpha_c[country] + phi*lag + X*beta + noise
+  message("Computing posterior predictive draws manually (may take a moment)...")
+  # Determine number of posterior draws to use (cap to avoid memory explosion)
+  if (tolower(METHOD) == "mcmc") {
+    ndraws <- dim(draws$phi)[1]
+  } else {
+    ndraws <- nrow(draws_mat)
+  }
+  # Preallocate
+  efs_pred_draws <- matrix(NA_real_, nrow = ndraws, ncol = N)
+  for (d in seq_len(ndraws)) {
+    if (tolower(METHOD) == "mcmc") {
+      alpha_c_draw <- draws$alpha_c[d, ]
+      phi_draw <- draws$phi[d]
+      sigma_draw <- draws$sigma[d]
+      beta_draw <- if (K>0) draws$beta[d, ] else numeric(0)
+    } else {
+      # vb draws parsed earlier
+      alpha_c_draw <- draws$alpha_c[d, ]
+      phi_draw <- draws$phi[d, 1]
+      sigma_draw <- draws$sigma[d, 1]
+      beta_draw <- if (K>0) draws$beta[d, ] else numeric(0)
+    }
+    mu_vec <- alpha_c_draw[country_index] + phi_draw * stan_data$EFS_lag
+    if (K > 0) mu_vec <- mu_vec + as.vector(stan_data$X %*% beta_draw)
+    # include observation noise
+    efs_pred_draws[d, ] <- rnorm(N, mean = mu_vec, sd = abs(sigma_draw))
+  }
+}
+
+# Summarize posterior predictions
+pred_mean <- apply(efs_pred_draws, 2, mean)
+pred_lo  <- apply(efs_pred_draws, 2, quantile, 0.025)
+pred_hi  <- apply(efs_pred_draws, 2, quantile, 0.975)
+
+# Attach to df_model
+df_out <- df_model %>%
+  mutate(EFS_pred_mean = pred_mean,
+         EFS_pred_lo = pred_lo,
+         EFS_pred_hi = pred_hi)
+
+# Save full posterior summary (historical obs + predictive dist)
+write_csv(df_out, file.path(OUT_DIR, paste0("efs_bayes_posterior_summary_method-", METHOD, ".csv")))
+
+# ---------------- One-step ahead forecast for each country ----------------
+# For each country, create a new row with year = last_year+1, EFS_lag = last observed EFS and predictors = last observed predictors (already in df_model)
+last_obs <- df_model %>%
+  group_by(iso) %>%
+  filter(year == max(year)) %>%
+  ungroup() %>%
+  select(iso, country, year, EFS, EFS_lag, everything())
+
+# We'll compute forecast draws by using posterior draws and plugging in last_obs EFS_lag and last predictors
+message("Computing one-step-ahead forecasts for each country...")
+n_draws_used <- if (tolower(METHOD) == "mcmc") dim(draws$phi)[1] else nrow(draws_mat)
+forecast_draws <- matrix(NA_real_, nrow = n_draws_used, ncol = nrow(last_obs))
+
+for (d in seq_len(n_draws_used)) {
+  if (tolower(METHOD) == "mcmc") {
+    alpha_c_draw <- draws$alpha_c[d, ]
+    phi_draw <- draws$phi[d]
+    sigma_draw <- draws$sigma[d]
+    beta_draw <- if (K>0) draws$beta[d, ] else numeric(0)
+  } else {
+    alpha_c_draw <- draws$alpha_c[d, ]
+    phi_draw <- draws$phi[d, 1]
+    sigma_draw <- draws$sigma[d, 1]
+    beta_draw <- if (K>0) draws$beta[d, ] else numeric(0)
+  }
+  # compute mu for each country using last_obs EFS_lag and predictors
+  mu_vec <- alpha_c_draw[as.integer(factor(last_obs$iso, levels = levels(country_factor)))] + phi_draw * last_obs$EFS
+  if (K > 0) {
+    # build predictor vector for last_obs rows: use same scaling as X_matrix (we used scale)
+    # For simplicity, we retrieve scaled predictors from X_matrix last rows
+    # find rows of df_model corresponding to last_obs iso indices
+    idxs <- sapply(last_obs$iso, function(i) which(df_model$iso == i & df_model$year == max(df_model$year[df_model$iso==i]))[1])
+    if (any(is.na(idxs))) {
+      mu_vec <- mu_vec
+    } else {
+      X_last <- stan_data$X[idxs, , drop=FALSE]
+      mu_vec <- mu_vec + as.vector(X_last %*% beta_draw)
+    }
+  }
+  forecast_draws[d, ] <- rnorm(n = length(mu_vec), mean = mu_vec, sd = abs(sigma_draw))
+}
+
+forecast_mean <- apply(forecast_draws, 2, mean)
+forecast_lo <- apply(forecast_draws, 2, quantile, 0.025)
+forecast_hi <- apply(forecast_draws, 2, quantile, 0.975)
+
+forecast_df <- last_obs %>%
+  transmute(iso, country, year = year + 1,
+            forecast_mean = forecast_mean,
+            forecast_lo = forecast_lo,
+            forecast_hi = forecast_hi)
+
+write_csv(forecast_df, file.path(OUT_DIR, paste0("efs_bayes_forecast_1step_method-", METHOD, ".csv")))
+
+# Top 10 forecast for next year
+forecast_summary <- forecast_df %>%
+  arrange(desc(forecast_mean)) %>%
+  mutate(forecast_rank = row_number()) %>%
+  select(forecast_rank, iso, country, year, forecast_mean, forecast_lo, forecast_hi) %>%
+  slice(1:10)
+
+write_csv(forecast_summary, file.path(OUT_DIR, paste0("efs_bayes_forecast_top10_method-", METHOD, ".csv")))
+message("Saved forecast top10 and full forecasts to outputs/")
+
+# ---------------- Diagnostic plot: random sample of countries -----------------
+set.seed(SEED)
+sample_isos <- sample(unique(df_model$iso), size =min(6, length(unique(df_model$iso))))
+for (iso_code in sample_isos) {
+  sub_hist <- df_model %>% filter(iso == iso_code)
+  # posterior predictive subset
+  idxs <- which(df_model$iso == iso_code)
+  png(file.path(FIG_DIR, paste0(iso_code), "bayes_pred.png")), width = 900, height = 500)
+  plot(sub_hist$year, sub_hist$EFS, type='b', pch=19, col='black', ylab='EFS', xlab='Year', main=paste0(sub_hist$country[1], " (", iso_code, ") - observed vs posterior mean"))
+  # plot posterior mean for those years
+  points(sub_hist$year, df_out$EFS_pred_mean[idxs], col='blue', pch=18)
+  arrows(sub_hist$year, df_out$EFS_pred_lo[idxs], sub$histyear, df_out$EFS_pred_hi[idxs], length=0.05, angle=90, code=3, col='blue')
+  dev.off()
+}
+
+message('Bayesian module complete. Inspect outputs/ and figures/bayes/ for results and diagnostics.")
+
+# ------------------ CAVEATS -------------------
+message("CAVEATS: VB is fast but underestimates variance. MCMC provides better uncerntainty but is slower. ")
+message("IF using VB for demos, consider running MCMC for final countries/regions of interest.")
