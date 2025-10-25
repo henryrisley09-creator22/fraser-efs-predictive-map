@@ -30,6 +30,6 @@ Bootstrapped CIs and PCA weighting are implemented in `3_bootstrap_ci.R`.
 
 ### Quickstart
 ```bash
-git clone https://github.com/henryrisley09-creator22/Economic-Freedom-Map-Algorithms
+git clone https://github.com/henryrisley09-creator22/fraser-efs-predictive-map
 cd efw-panel-analysis-R
 Rscript run_pipeline.R
