@@ -24,7 +24,7 @@ compute_score_manual <- function(df_in, weights) {
 df_scores <- compute_score_manual(df, weights_equal)
 
 # 2b) PCA-derived weights (data-driven) - compute per year or global?
-# We compute PCA loadings using the latest year (or you can compute globally)
+# We compute PCA loadings using the latest year 
 latest_year <- max(df_scores$year, na.rm = TRUE)
 df_latest <- df_scores %>% filter(year == latest_year)
 X <- df_latest %>% select(all_of(norm_cols)) %>% drop_na()
