@@ -189,11 +189,18 @@ if (tolower(METHOD) == "mcmc" && "EFS_pred" %in% names(draws)) {
 } else {
   # compute EFS_pred draws manually: for each draw, compute alpha_c[country] + phi*lag + X*beta + noise
   message("Computing posterior predictive draws manually (may take a moment)...")
-  # Determine number of posterior draws to use (cap to avoid memory explosion)
-  if (tolower(METHOD) == "mcmc") {
+  # Ensure N and ndraws are numeric
+N <- as.numeric(nrow(df_model))  # number of observations
+
+if (tolower(METHOD) == "mcmc") {
   ndraws <- length(draws$phi)
 } else {
   ndraws <- nrow(as.matrix(draws_mat))
+}
+
+# Safety fallback
+if (is.na(ndraws) || ndraws == 0) {
+  stop("Error: ndraws could not be determined. Check your Stan sampling output.")
 }
   # Preallocate
   efs_pred_draws <- matrix(NA_real_, nrow = ndraws, ncol = N)
