@@ -191,10 +191,10 @@ if (tolower(METHOD) == "mcmc" && "EFS_pred" %in% names(draws)) {
   message("Computing posterior predictive draws manually (may take a moment)...")
   # Determine number of posterior draws to use (cap to avoid memory explosion)
   if (tolower(METHOD) == "mcmc") {
-    ndraws <- dim(draws$phi)[1]
-  } else {
-    ndraws <- nrow(draws_mat)
-  }
+  ndraws <- length(draws$phi)
+} else {
+  ndraws <- nrow(as.matrix(draws_mat))
+}
   # Preallocate
   efs_pred_draws <- matrix(NA_real_, nrow = ndraws, ncol = N)
   for (d in seq_len(ndraws)) {
