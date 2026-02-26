@@ -320,7 +320,7 @@ for (iso_code in sample_isos) {
   sub_hist <- df_model %>% filter(iso == iso_code)
   # posterior predictive subset
   idxs <- which(df_model$iso == iso_code)
-  png(file.path(FIG_DIR, paste0(iso_code), "bayes_pred.png")), width = 900, height = 500)
+  png(file.path(FIG_DIR, paste0(iso_code, "_bayes_pred.png")), width = 900, height = 500)
   plot(sub_hist$year, sub_hist$EFS, type='b', pch=19, col='black', ylab='EFS', xlab='Year', main=paste0(sub_hist$country[1], " (", iso_code, ") - observed vs posterior mean"))
   # plot posterior mean for those years
   points(sub_hist$year, df_out$EFS_pred_mean[idxs], col='blue', pch=18)
