@@ -315,20 +315,23 @@ message("Saved forecast top10 and full forecasts to outputs/")
 
 # ---------------- Diagnostic plot: random sample of countries -----------------
 set.seed(SEED)
-sample_isos <- sample(unique(df_model$iso), size =min(6, length(unique(df_model$iso))))
+sample_isos <- sample(unique(df_model$iso), size = min(6, length(unique(df_model$iso))))
+
 for (iso_code in sample_isos) {
   sub_hist <- df_model %>% filter(iso == iso_code)
-  # posterior predictive subset
   idxs <- which(df_model$iso == iso_code)
+  
   png(file.path(FIG_DIR, paste0(iso_code, "_bayes_pred.png")), width = 900, height = 500)
-  plot(sub_hist$year, sub_hist$EFS, type='b', pch=19, col='black', ylab='EFS', xlab='Year', main=paste0(sub_hist$country[1], " (", iso_code, ") - observed vs posterior mean"))
-  # plot posterior mean for those years
-  points(sub_hist$year, df_out$EFS_pred_mean[idxs], col='blue', pch=18)
-  arrows(sub_hist$year, df_out$EFS_pred_lo[idxs], sub$histyear, df_out$EFS_pred_hi[idxs], length=0.05, angle=90, code=3, col='blue')
+  plot(sub_hist$year, sub_hist$EFS, type = 'b', pch = 19, col = 'black',
+       ylab = 'EFS', xlab = 'Year',
+       main = paste0(sub_hist$country[1], " (", iso_code, ") - observed vs posterior mean"))
+  points(sub_hist$year, df_out$EFS_pred_mean[idxs], col = 'blue', pch = 18)
+  arrows(sub_hist$year, df_out$EFS_pred_lo[idxs], sub_hist$year, df_out$EFS_pred_hi[idxs],
+         length = 0.05, angle = 90, code = 3, col = 'blue')
   dev.off()
 }
 
-message('Bayesian module complete. Inspect outputs/ and figures/bayes/ for results and diagnostics.")
+message("Bayesian module complete. Inspect outputs/ and figures/bayes/ for results and diagnostics.")
 
 # ------------------ CAVEATS -------------------
 message("CAVEATS: VB is fast but underestimates variance. MCMC provides better uncerntainty but is slower. ")
