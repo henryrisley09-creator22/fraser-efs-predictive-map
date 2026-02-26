@@ -1,6 +1,6 @@
 suppressPackageStartupMessages({
   library(rstan)
-  library(dplyer)
+  library(dplyr)
   library(readr)
   library(ggplot2)
   library(tidyr)
@@ -19,7 +19,7 @@ SEED <- 2025
 HORIZON <- 1
 
 OUT_DIR <- "outputs"
-FIG_DIR <- file.[ath("figures, "bayes")
+FIG_DIR <- file.path("figures", "bayes")
 dir.create(OUT_DIR, showWarnings = FALSE, recursive = TRUE)
 dir.create(FIG_DIR, showWarnings = FALSE, recursive = TRUE)
 
@@ -37,7 +37,10 @@ efs_col <- if ("EFS_pca" %in% names(df_all)) "EFS_pca" else if ("EFS_manual" %in
 
 # Prepare dataset: ensure needed columns exist, create lag, and pick predictor columns present
 df <- df_all %>%
-  rename(iso = ISO_Code %??% "ISO_Code", country = Countries %??% "Countries") %>% # safe rename if present
+  mutate(
+    iso = if ("ISO_Code" %in% names(df_all)) ISO_Code else NA,
+    country = if ("Countries" %in% names(df_all)) Countries else NA
+  ) %>%
   mutate(year = as.integer(year)) %>%
   select(iso, country, year, all_of(efs_col), everything()) %>%
   rename(EFS = all_of(efs_col)) %>%
@@ -46,7 +49,7 @@ df <- df_all %>%
   mutate(EFS_lag = lag(EFS)) %>%
   ungroup()
 
-# Helper: safe selection operator (if rename above fails)
+# Helper: safe selection operator
 `%??%` <- function(x, y) if (y %in% names(df_all)) y else x
 
 # Filter rows with lag (we need lag to model AR(1))
