@@ -136,9 +136,9 @@ model {
   alpha_c ~ normal(alpha_0, tau);
   alpha_0 ~ normal(0, 1);
   if (K > 0) beta ~ normal(0, 1);
-  phi ~ normal(0, 1);
-  sigma ~ cauchy(0, 1);
-  tau ~ cauchy(0, 1);
+  phi ~ normal(0.8, 0.1);
+  sigma ~ student_t(3, 0, 0.3);
+  tau ~ student_t(3, 0, 0.3);
 
   // Likelihood
   for (n in 1:N)
