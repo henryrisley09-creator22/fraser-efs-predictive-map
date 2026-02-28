@@ -41,23 +41,32 @@ if (!"year" %in% names(df_hist)) {
 # Now safely group and filter
 df_hist <- df_hist %>% rename_with(tolower)
 
-# Ensure we have a 'year' column
+# Detect or rename year column
 if (!"year" %in% names(df_hist)) {
   possible_year_col <- names(df_hist)[grepl("year", names(df_hist), ignore.case = TRUE)]
   if (length(possible_year_col) > 0) {
     df_hist <- df_hist %>% rename(year = all_of(possible_year_col[1]))
   } else {
-    stop(" No column containing 'year' found in df_hist.")
+    stop("No column containing 'year' found in df_hist.")
   }
 }
 
-# Now safely group and filter
+# Define which predictors you *want* to use
+predictors <- c("inflation", "gdp_growth", "reg_quality", "trade_open", "fiscal_balance")
+
+# Keep only those predictors that exist in the dataset
+present_predictors <- intersect(predictors, names(df_hist))
+if (length(present_predictors) == 0) {
+  warning("⚠️ None of the specified predictor columns exist in df_hist. Proceeding with basic vars only.")
+}
+
+# Safely compute latest observation per country
 df_latest <- df_hist %>%
-  group_by(iso_code) %>%            # also lowercase now
+  filter(!is.na(year)) %>%                  # drop NA-year rows
+  group_by(iso_code) %>%
   filter(year == max(year, na.rm = TRUE)) %>%
   ungroup() %>%
-  select(iso_code, countries, year, all_of(predictors))
-
+  select(iso_code, countries, year, all_of(present_predictors))
 # ------------------ SIMPLE PROJECTION MODEL ------------------
 # You can replace this section later with actual IMF / OECD data
 # For now, we build simple autoregressive (AR1-like) trend extrapolations
