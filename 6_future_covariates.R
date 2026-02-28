@@ -41,7 +41,7 @@ if (!"year" %in% names(df_hist)) {
 # Now safely group and filter
 df_hist <- df_hist %>% rename_with(tolower)
 
-# Detect or rename year column
+# Ensure 'year' column exists
 if (!"year" %in% names(df_hist)) {
   possible_year_col <- names(df_hist)[grepl("year", names(df_hist), ignore.case = TRUE)]
   if (length(possible_year_col) > 0) {
@@ -51,22 +51,34 @@ if (!"year" %in% names(df_hist)) {
   }
 }
 
-# Define which predictors you *want* to use
+# Define desired predictors, but handle missing ones gracefully
 predictors <- c("inflation", "gdp_growth", "reg_quality", "trade_open", "fiscal_balance")
 
-# Keep only those predictors that exist in the dataset
+# Only keep predictors that actually exist
 present_predictors <- intersect(predictors, names(df_hist))
-if (length(present_predictors) == 0) {
-  warning("⚠️ None of the specified predictor columns exist in df_hist. Proceeding with basic vars only.")
+if (length(present_predictors) < length(predictors)) {
+  warning("⚠️ Some predictors not found in data. Using available variables only: ",
+          paste(present_predictors, collapse = ", "))
 }
 
-# Safely compute latest observation per country
+# Filter for valid iso/year
 df_latest <- df_hist %>%
-  filter(!is.na(year)) %>%                  # drop NA-year rows
+  filter(!is.na(year), !is.na(iso_code)) %>%
   group_by(iso_code) %>%
   filter(year == max(year, na.rm = TRUE)) %>%
-  ungroup() %>%
-  select(iso_code, countries, year, all_of(present_predictors))
+  ungroup()
+
+# Select safely: include predictors only if present
+if (length(present_predictors) > 0) {
+  df_latest <- df_latest %>%
+    select(iso_code, countries, year, all_of(present_predictors))
+} else {
+  df_latest <- df_latest %>%
+    select(iso_code, countries, year)
+}
+
+# Check output
+message("✅ df_latest successfully created with ", nrow(df_latest), " countries.")
 # ------------------ SIMPLE PROJECTION MODEL ------------------
 # You can replace this section later with actual IMF / OECD data
 # For now, we build simple autoregressive (AR1-like) trend extrapolations
