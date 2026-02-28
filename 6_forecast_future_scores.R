@@ -119,7 +119,7 @@ results_df <- bind_rows(results)
 
 # --- Safety: ensure is_forecast column exists ---
 if (!"is_forecast" %in% names(results_df)) {
-  message("⚠️ No is_forecast column found in results_df. Creating placeholder flag.")
+  message("No is_forecast column found in results_df. Creating placeholder flag.")
   results_df$is_forecast <- grepl("forecast", tolower(results_df$model)) | 
                             results_df$year > max(df_scores$year, na.rm = TRUE)
 }
