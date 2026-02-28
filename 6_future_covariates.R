@@ -39,6 +39,19 @@ if (!"year" %in% names(df_hist)) {
 }
 
 # Now safely group and filter
+df_hist <- df_hist %>% rename_with(tolower)
+
+# Ensure we have a 'year' column
+if (!"year" %in% names(df_hist)) {
+  possible_year_col <- names(df_hist)[grepl("year", names(df_hist), ignore.case = TRUE)]
+  if (length(possible_year_col) > 0) {
+    df_hist <- df_hist %>% rename(year = all_of(possible_year_col[1]))
+  } else {
+    stop(" No column containing 'year' found in df_hist.")
+  }
+}
+
+# Now safely group and filter
 df_latest <- df_hist %>%
   group_by(iso_code) %>%            # also lowercase now
   filter(year == max(year, na.rm = TRUE)) %>%
