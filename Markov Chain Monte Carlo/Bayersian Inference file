@@ -25,7 +25,16 @@ dir.create(FIG_DIR, showWarnings = FALSE, recursive = TRUE)
 
 # ---------------- Choose micro / macro predictor variables (edit as needed) ----------------
 # These must be column names in data/df_scores.rds (case-sensitive). If empty, model uses only EFS_lag.
-MICRO_VARS <- c("gdp_growth", "inflation", "business_entry_cost", "firm_density") # example names
+MICRO_VARS <- c(
+  "gdp_growth",
+  "inflation",
+  "business_entry_cost",
+  "firm_density",
+  "reg_quality",
+  "trade_open",
+  "fiscal_balance"
+)
+# example names
 # If your dataset has different column names, put them here. The script will drop missing ones.
 
 # ---------------- Load scored panel (produced by your pipeline) ----------------
