@@ -41,7 +41,7 @@ if (!"year" %in% names(df_hist)) {
 # Now safely group and filter
 df_hist <- df_hist %>% rename_with(tolower)
 
-# Ensure 'year' column exists
+# Ensure a valid 'year' column exists
 if (!"year" %in% names(df_hist)) {
   possible_year_col <- names(df_hist)[grepl("year", names(df_hist), ignore.case = TRUE)]
   if (length(possible_year_col) > 0) {
@@ -51,34 +51,34 @@ if (!"year" %in% names(df_hist)) {
   }
 }
 
-# Define desired predictors, but handle missing ones gracefully
+# Define predictors you WANT to use (future-ready)
 predictors <- c("inflation", "gdp_growth", "reg_quality", "trade_open", "fiscal_balance")
 
 # Only keep predictors that actually exist
 present_predictors <- intersect(predictors, names(df_hist))
-if (length(present_predictors) < length(predictors)) {
-  warning("⚠️ Some predictors not found in data. Using available variables only: ",
-          paste(present_predictors, collapse = ", "))
-}
 
-# Filter for valid iso/year
-df_latest <- df_hist %>%
-  filter(!is.na(year), !is.na(iso_code)) %>%
-  group_by(iso_code) %>%
-  filter(year == max(year, na.rm = TRUE)) %>%
-  ungroup()
-
-# Select safely: include predictors only if present
-if (length(present_predictors) > 0) {
-  df_latest <- df_latest %>%
-    select(iso_code, countries, year, all_of(present_predictors))
-} else {
-  df_latest <- df_latest %>%
+# Prevent select() from failing: use if/else logic
+if (length(present_predictors) == 0) {
+  message("No predictor columns found in df_hist. Proceeding with base columns only.")
+  df_latest <- df_hist %>%
+    filter(!is.na(year), !is.na(iso_code)) %>%
+    group_by(iso_code) %>%
+    filter(year == max(year, na.rm = TRUE)) %>%
+    ungroup() %>%
     select(iso_code, countries, year)
+} else {
+  df_latest <- df_hist %>%
+    filter(!is.na(year), !is.na(iso_code)) %>%
+    group_by(iso_code) %>%
+    filter(year == max(year, na.rm = TRUE)) %>%
+    ungroup() %>%
+    select(iso_code, countries, year, all_of(present_predictors))
 }
 
-# Check output
-message("✅ df_latest successfully created with ", nrow(df_latest), " countries.")
+message("df_latest successfully created with ", nrow(df_latest), " countries and ",
+        ifelse(length(present_predictors) > 0,
+               paste(length(present_predictors), "predictors."),
+               "no extra predictors."))
 # ------------------ SIMPLE PROJECTION MODEL ------------------
 # You can replace this section later with actual IMF / OECD data
 # For now, we build simple autoregressive (AR1-like) trend extrapolations
