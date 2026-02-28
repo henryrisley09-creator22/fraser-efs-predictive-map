@@ -16,6 +16,7 @@ source("2_compute_scores.R")
 source("3_bootstrap_ci.R")
 source("4_changepoint_detect.R")
 source("5_visualize.R")
+source("6_future_covariates.R")
 
 # --- Step 1: Load raw data ---
 raw <- load_panel_data("data/efotw-2025-master-index-data-for-researchers-iso.xlsx")
