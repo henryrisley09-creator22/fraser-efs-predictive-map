@@ -83,10 +83,18 @@ df_future <- df_latest %>%
   ungroup()
 
 # ------------------ COMBINE HISTORICAL + FUTURE ------------------
-df_combined <- bind_rows(
-  df_hist %>% select(iso_code, countries, year, all_of(present_predictors)),
-  df_future
-)
+
+# Tag both datasets before combining
+df_hist_tagged <- df_hist %>%
+  mutate(is_forecast = FALSE) %>%
+  select(iso_code, countries, year, all_of(present_predictors), is_forecast)
+
+df_future_tagged <- df_future %>%
+  mutate(is_forecast = TRUE) %>%
+  select(iso_code, countries, year, all_of(present_predictors), is_forecast)
+
+# Combine with consistent column order
+df_combined <- bind_rows(df_hist_tagged, df_future_tagged)
 
 # ------------------ SAVE RESULTS ------------------
 write_csv(df_combined, OUTPUT_FILE)
