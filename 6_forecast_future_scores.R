@@ -117,6 +117,12 @@ results <- mclapply(isos, run_one_iso, mc.cores = ncores)
 # Combine results
 results_df <- bind_rows(results)
 
+# --- Safety: ensure is_forecast column exists ---
+if (!"is_forecast" %in% names(results_df)) {
+  message("⚠️ No is_forecast column found in results_df. Creating placeholder flag.")
+  results_df$is_forecast <- grepl("forecast", tolower(results_df$model)) | 
+                            results_df$year > max(df_scores$year, na.rm = TRUE)
+}
 # Keep only forecast rows for export and ranking
 forecast_rows <- results_df %>% filter(is_forecast == TRUE)
 
