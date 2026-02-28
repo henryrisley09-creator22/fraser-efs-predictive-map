@@ -39,4 +39,10 @@ plot(sub_hist$year, sub_hist$EFS, type='b', pch=19, col='black',
      xlab="Year",
      main=paste0(sub_hist$country[1], " (", iso_code, "): Forecasted Economic Freedom (2025–2030)"))
 
+arrows(sub_hist$year,
+       df_out$EFS_pred_lo[idxs] * 1.01,
+       sub_hist$year,
+       df_out$EFS_pred_hi[idxs] * 0.99,
+       length = 0.05, angle = 90, code = 3, col = 'blue')
+
 message("Visualizations saved to figures/")
