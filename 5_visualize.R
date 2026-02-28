@@ -34,4 +34,9 @@ p2 <- ggplot(country_ts, aes(x = year, y = EFS_pca)) +
   theme_minimal()
 ggsave("figures/usa_time_series.png", p2, width = 8, height = 4, dpi = 150)
 
+plot(sub_hist$year, sub_hist$EFS, type='b', pch=19, col='black',
+     ylab="Economic Freedom Score (EFS)",
+     xlab="Year",
+     main=paste0(sub_hist$country[1], " (", iso_code, "): Forecasted Economic Freedom (2025–2030)"))
+
 message("Visualizations saved to figures/")
