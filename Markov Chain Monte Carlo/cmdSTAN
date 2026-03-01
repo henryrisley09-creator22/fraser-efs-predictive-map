@@ -188,7 +188,7 @@ if (tolower(METHOD) == "mcmc") {
 # ---------------- Extract posterior draws and compute predictive summaries ----------------
 # We want posterior draws of alpha_c, alpha_0, phi, beta (if present), sigma, tau.
 if (tolower(METHOD) == "mcmc") {
-  draws <- rstan::extract(fit)
+  draws <- fit$draws()
 } else {
   # vb returns matrices; use as.matrix and parse names
   draws_mat <- as.matrix(fit)
