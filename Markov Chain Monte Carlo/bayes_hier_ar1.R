@@ -159,17 +159,15 @@ stan_mod <- rstan::stan_model(model_code = stan_code)
 # ---------------- FIT (MCMC or VB) ----------------
 if (tolower(METHOD) == "mcmc") {
   message("Running full MCMC sampling (this may take a while)...")
-  if (tolower(METHOD) == "mcmc") {
-  message("Running full MCMC sampling (this may take a while)...")
-fit <- rstan::sampling(
-  stan_mod,
-  data = stan_data,
-  chains = CHAINS,
-  iter = ITER,
-  warmup = WARMUP,
-  seed = SEED,
-  control = list(adapt_delta = 0.99, max_treedepth = 15)
-)
+  fit <- rstan::sampling(
+    stan_mod,
+    data = stan_data,
+    chains = CHAINS,
+    iter = ITER,
+    warmup = WARMUP,
+    seed = SEED,
+    control = list(adapt_delta = 0.99, max_treedepth = 15)
+  )
   fit_samples <- as.array(fit) # stanfit object
 } else if (tolower(METHOD) == "vb") {
   message("Running Variational Bayes (fast, approx posterior; underestimates uncertainty)...")
