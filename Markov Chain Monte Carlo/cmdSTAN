@@ -119,7 +119,7 @@ data {
   int<lower=1> N;
   int<lower=1> C;
   int<lower=0> K;
-  int<lower=1,upper=C> country[N];
+  array[N] int<lower=1, upper=C> country;
   vector[N] EFS;
   vector[N] EFS_lag;
   matrix[N, K] X;
@@ -142,8 +142,19 @@ model {
   tau ~ student_t(3, 0, 0.3);
 
   // Likelihood
-  for (n in 1:N)
-    EFS[n] ~ normal(alpha_c[country[n]] + phi * EFS_lag[n] + (K>0 ? X[n] * beta : 0), sigma);
+  for (n in 1:N) {
+    real xb = 0;
+    if (K > 0)
+        xb = X[n] * beta;
+
+    EFS[n] ~ normal(
+        alpha_c[country[n]] +
+        phi * EFS_lag[n] +
+        xb,
+        sigma
+    );
+}
+
 }
 generated quantities {
   vector[N] EFS_pred;
