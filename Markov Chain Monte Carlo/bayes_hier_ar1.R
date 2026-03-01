@@ -11,9 +11,9 @@ options(mc.cores = max(1, parallel::detectCores() - 1))
 
 # ---------------- PARAMETERS ----------------
 METHOD <- "mcmc"
-CHAINS <- 4
-ITER <- 4000
-WARMUP <- 1000
+CHAINS <- 2
+ITER <- 1000
+WARMUP <- 500
 control = list(adapt_delta = 0.99, max_treedepth = 15)
 VB_ITER <- 5000
 SEED <- 2025
