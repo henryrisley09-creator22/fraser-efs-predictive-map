@@ -174,200 +174,180 @@ generated quantities {
 # ---------------- Extract posterior draws and compute predictive summaries ----------------
 # We want posterior draws of alpha_c, alpha_0, phi, beta (if present), sigma, tau.
 if (tolower(METHOD) == "mcmc") {
-  draws_array <- fit$draws()
+  message("Running enhanced MCMC diagnostics and posterior visualizations...")
 
-  # Extract parameters properly
-  phi_draws   <- draws_array[, , "phi"]
-  sigma_draws <- draws_array[, , "sigma"]
-  tau_draws   <- draws_array[, , "tau"]
+  # Convert draws to posterior-friendly objects
+  draws_array <- as_draws_array(fit$draws())   # draws × chains × variables
+  draws_mat   <- as_draws_matrix(fit$draws())  # draws × variables (flattened)
 
-  # alpha_c and beta are vectors, so extract all matching names
-  varnames <- dimnames(draws_array)$variable
-  alpha_idx <- grepl("^alpha_c", varnames)
-  beta_idx  <- grepl("^beta", varnames)
+  # Numeric diagnostics (posterior package)
+  rhat_vals <- rhat(draws_array)               # array or matrix of Rhat
+  ess_bulk_vals <- ess_bulk(draws_array)
+  ess_tail_vals <- ess_tail(draws_array)
 
-  alpha_c_draws <- draws_array[, , alpha_idx, drop = FALSE]
-  beta_draws    <- draws_array[, , beta_idx, drop = FALSE]
+  # Convert to tidy table for CSV
+  diag_df <- data.frame(
+    parameter = names(rhat_vals),
+    rhat = as.numeric(rhat_vals),
+    ess_bulk = as.numeric(ess_bulk_vals),
+    ess_tail = as.numeric(ess_tail_vals),
+    stringsAsFactors = FALSE
+  )
+  write_csv(diag_df, file.path(OUT_DIR, paste0("mcmc_diagnostics_method-", METHOD, ".csv")))
 
-} else {
-  # vb returns matrices; use as.matrix and parse names
-  draws_mat <- as.matrix(fit)
-  draws <- list()
-  # Parse columns: rstan names vary; we'll use grep to extract parameters
-  # alpha_c[1] etc., phi, alpha_0, beta[1], sigma, tau
-  draws$alpha_c <- do.call(cbind, lapply(grep("^alpha_c\\[", colnames(draws_mat), value=TRUE), function(nm) draws_mat[, nm])) # draws x C
-  draws$alpha_0 <- draws_mat[, "alpha_0", drop=FALSE]
-  draws$phi <- draws_mat[, "phi", drop=FALSE]
-  if (K > 0) {
-    beta_cols <- grep("^beta\\[", colnames(draws_mat), value = TRUE)
-    draws$beta <- do.call(cbind, lapply(beta_cols, function(nm) draws_mat[, nm]))
-  } else draws$beta <- matrix(nrow = nrow(draws_mat), ncol = 0)
-  draws$sigma <- draws_mat[, "sigma", drop=FALSE]
-  draws$tau <- draws_mat[, "tau", drop=FALSE]
-  # convert to list format similar to sampling extract
-}
+  # Quick thresholds for flagging
+  diag_df <- diag_df %>%
+    mutate(flag_rhat = rhat > 1.01,
+           flag_ess  = ess_bulk < 400)
 
-# Build posterior predictive samples for each observation via draws (safe approach)
-# We'll compute posterior predictive mean & 95% intervals for EFS_pred as generated quantities (if available) or compute directly.
-if (tolower(METHOD) == "mcmc") {
-  # CmdStanR: generated quantities are already in draws_array
-  if ("EFS_pred" %in% dimnames(draws_array)$variable) {
-    efs_pred_draws <- draws_array[, , "EFS_pred"]
-  } else {
-    efs_pred_draws <- NULL
-  }
-} else {
-  # compute EFS_pred draws manually: for each draw, compute alpha_c[country] + phi*lag + X*beta + noise
-  message("Computing posterior predictive draws manually (may take a moment)...")
-  # Ensure N and ndraws are numeric
-N <- as.numeric(nrow(df_model))  # number of observations
+  # Save flagged diagnostics
+  write_csv(diag_df %>% filter(flag_rhat | flag_ess),
+            file.path(OUT_DIR, paste0("mcmc_diagnostics_flags_method-", METHOD, ".csv")))
 
-if (tolower(METHOD) == "mcmc") {
-  ndraws <- length(phi_draws)
-} else {
-  ndraws <- nrow(as.matrix(draws_mat))
-}
+  # ---------------- Classic MCMC plots ----------------
+  posterior_array <- as_draws_array(fit$draws())  # bayesplot works with arrays
 
-# Safety fallback
-if (is.na(ndraws) || ndraws == 0) {
-  stop("Error: ndraws could not be determined. Check your Stan sampling output.")
-}
-  # Preallocate
-  efs_pred_draws <- matrix(NA_real_, nrow = ndraws, ncol = N)
-  for (d in seq_len(ndraws)) {
-    # number of draws
-if (tolower(METHOD) == "mcmc") {
-  ndraws <- length(phi_draws)
-} else {
-  ndraws <- nrow(draws_mat)
-}
-
-efs_pred_draws <- matrix(NA_real_, nrow = ndraws, ncol = N)
-
-for (d in seq_len(ndraws)) {
-  if (tolower(METHOD) == "mcmc") {
-    alpha_c_draw <- alpha_c_draws[d, ]
-    phi_draw     <- phi_draws[d]
-    sigma_draw   <- sigma_draws[d]
-    beta_draw    <- if (K > 0) beta_draws[d, ] else numeric(0)
-  } else {
-    alpha_c_draw <- draws$alpha_c[d, ]
-    phi_draw     <- draws$phi[d, 1]
-    sigma_draw   <- draws$sigma[d, 1]
-    beta_draw    <- if (K > 0) draws$beta[d, ] else numeric(0)
-  }
-  mu_vec <- alpha_c_draw[country_index] + phi_draw * stan_data$EFS_lag
-  if (K > 0) mu_vec <- mu_vec + as.vector(stan_data$X %*% beta_draw)
-
-  efs_pred_draws[d, ] <- rnorm(N, mean = mu_vec, sd = abs(sigma_draw))
-}
-
-
-# Summarize posterior predictions
-pred_mean <- apply(efs_pred_draws, 2, mean)
-pred_lo  <- apply(efs_pred_draws, 2, quantile, 0.025)
-pred_hi  <- apply(efs_pred_draws, 2, quantile, 0.975)
-
-# Attach to df_model
-df_out <- df_model %>%
-  mutate(EFS_pred_mean = pred_mean,
-         EFS_pred_lo = pred_lo,
-         EFS_pred_hi = pred_hi)
-
-# Save full posterior summary (historical obs + predictive dist)
-write_csv(df_out, file.path(OUT_DIR, paste0("efs_bayes_posterior_summary_method-", METHOD, ".csv")))
-
-# ---------------- One-step ahead forecast for each country ----------------
-# For each country, create a new row with year = last_year+1, EFS_lag = last observed EFS and predictors = last observed predictors (already in df_model)
-last_obs <- df_model %>%
-  group_by(iso) %>%
-  filter(year == max(year)) %>%
-  ungroup() %>%
-  select(iso, country, year, EFS, EFS_lag, everything())
-
-# We'll compute forecast draws by using posterior draws and plugging in last_obs EFS_lag and last predictors
-message("Computing one-step-ahead forecasts for each country...")
-n_draws_used <- if (tolower(METHOD) == "mcmc") length(phi_draws) else nrow(draws_mat)
-forecast_draws <- matrix(NA_real_, nrow = n_draws_used, ncol = nrow(last_obs))
-
-for (d in seq_len(n_draws_used)) {
-  if (tolower(METHOD) == "mcmc") {
-    alpha_c_draw <- alpha_c_draws[d, ]
-    phi_draw     <- phi_draws[d]
-    sigma_draw   <- sigma_draws[d]
-    beta_draw    <- if (K > 0) beta_draws[d, ] else numeric(0)
-} else {
-    alpha_c_draw <- alpha_c_draws[d, ]
-    phi_draw     <- phi_draws[d]
-    sigma_draw   <- sigma_draws[d]
-    beta_draw    <- if (K > 0) beta_draws[d, ] else numeric(0)
-}
-  # compute mu for each country using last_obs EFS_lag and predictors
-  mu_vec <- alpha_c_draw[as.integer(factor(last_obs$iso, levels = levels(country_factor)))] + phi_draw * last_obs$EFS
-  if (K > 0) {
-    # build predictor vector for last_obs rows: use same scaling as X_matrix (we used scale)
-    # For simplicity, we retrieve scaled predictors from X_matrix last rows
-    # find rows of df_model corresponding to last_obs iso indices
-    idxs <- sapply(last_obs$iso, function(i) which(df_model$iso == i & df_model$year == max(df_model$year[df_model$iso==i]))[1])
-    if (any(is.na(idxs))) {
-      mu_vec <- mu_vec
-    } else {
-      X_last <- stan_data$X[idxs, , drop=FALSE]
-      mu_vec <- mu_vec + as.vector(X_last %*% beta_draw)
-    }
-  }
-  forecast_draws[d, ] <- rnorm(n = length(mu_vec), mean = mu_vec, sd = abs(sigma_draw))
-}
-
-forecast_mean <- apply(forecast_draws, 2, mean)
-forecast_lo <- apply(forecast_draws, 2, quantile, 0.025)
-forecast_hi <- apply(forecast_draws, 2, quantile, 0.975)
-
-forecast_df <- last_obs %>%
-  transmute(iso, country, year = year + 1,
-            forecast_mean = forecast_mean,
-            forecast_lo = forecast_lo,
-            forecast_hi = forecast_hi)
-
-write_csv(forecast_df, file.path(OUT_DIR, paste0("efs_bayes_forecast_1step_method-", METHOD, ".csv")))
-
-# Top 10 forecast for next year
-forecast_summary <- forecast_df %>%
-  arrange(desc(forecast_mean)) %>%
-  mutate(forecast_rank = row_number()) %>%
-  select(forecast_rank, iso, country, year, forecast_mean, forecast_lo, forecast_hi) %>%
-  slice(1:10)
-
-write_csv(forecast_summary, file.path(OUT_DIR, paste0("efs_bayes_forecast_top10_method-", METHOD, ".csv")))
-message("Saved forecast top10 and full forecasts to outputs/")
-
-# ---------------- Diagnostic plot: random sample of countries -----------------
-set.seed(SEED)
-isos_available <- unique(df_model$iso)
-
-if (length(isos_available) == 0) {
-  message("No countries available for plotting — df_model is empty.")
-  sample_isos <- character(0)
-} else {
-  sample_isos <- sample(isos_available, size = min(6, length(isos_available)))
-}
-
-for (iso_code in sample_isos) {
-  sub_hist <- df_model %>% filter(iso == iso_code)
-  idxs <- which(df_model$iso == iso_code)
-  
-  png(file.path(FIG_DIR, paste0(iso_code, "_bayes_pred.png")), width = 900, height = 500)
-  plot(sub_hist$year, sub_hist$EFS, type = 'b', pch = 19, col = 'black',
-       ylab = 'EFS', xlab = 'Year',
-       main = paste0(sub_hist$country[1], " (", iso_code, ") - observed vs posterior mean"))
-  points(sub_hist$year, df_out$EFS_pred_mean[idxs], col = 'blue', pch = 18)
-  arrows(sub_hist$year, df_out$EFS_pred_lo[idxs], sub_hist$year, df_out$EFS_pred_hi[idxs],
-         length = 0.05, angle = 90, code = 3, col = 'blue')
+  # Trace + density for core params
+  core_pars <- c("alpha_0", "phi", "sigma", "tau")
+  png(file.path(FIG_DIR, "mcmc_trace_core.png"), width = 1000, height = 700)
+  bayesplot::mcmc_trace(posterior_array, pars = core_pars)
   dev.off()
+
+  png(file.path(FIG_DIR, "mcmc_dens_core.png"), width = 1000, height = 700)
+  bayesplot::mcmc_dens_overlay(posterior_array, pars = core_pars)
+  dev.off()
+
+  png(file.path(FIG_DIR, "mcmc_acf_core.png"), width = 1000, height = 700)
+  bayesplot::mcmc_acf(posterior_array, pars = c("alpha_0", "phi"))
+  dev.off()
+
+  png(file.path(FIG_DIR, "mcmc_rank_core.png"), width = 1000, height = 700)
+  bayesplot::mcmc_rank_overlay(posterior_array, pars = core_pars)
+  dev.off()
+
+  # NUTS energy plot (if available)
+  try({
+    png(file.path(FIG_DIR, "mcmc_nuts_energy.png"), width = 1000, height = 700)
+    bayesplot::mcmc_nuts_energy(posterior_array)
+    dev.off()
+  }, silent = TRUE)
+
+  # Pairwise scatter for a few params (useful for correlations)
+  png(file.path(FIG_DIR, "mcmc_pairs_core.png"), width = 1000, height = 1000)
+  bayesplot::mcmc_pairs(posterior_array, pars = core_pars, off_diag_args = list(size = 0.5))
+  dev.off()
+
+  # ---------------- Posterior summaries and plots ----------------
+
+  # 1) Caterpillar plot for alpha_c (country intercepts)
+  alpha_cols <- grep("^alpha_c\
+
+\[", colnames(draws_mat), value = TRUE)
+  if (length(alpha_cols) > 0) {
+    alpha_mat <- draws_mat[, alpha_cols, drop = FALSE]   # draws × C
+    alpha_summary <- apply(alpha_mat, 2, function(x) {
+      c(mean = mean(x), lo = quantile(x, 0.025), hi = quantile(x, 0.975))
+    }) %>% t() %>% as.data.frame()
+    alpha_summary$iso <- sub("^alpha_c\
+
+\[(\\d+)\\]
+
+$", "\\1", rownames(alpha_summary))
+    # map iso index back to factor levels
+    alpha_summary$iso <- levels(country_factor)[as.integer(alpha_summary$iso)]
+    alpha_summary <- alpha_summary %>% arrange(mean)
+
+    write_csv(alpha_summary, file.path(OUT_DIR, paste0("alpha_c_summary_method-", METHOD, ".csv")))
+
+    png(file.path(FIG_DIR, "alpha_c_caterpillar.png"), width = 1000, height = 1200)
+    ggplot(alpha_summary, aes(x = mean, y = reorder(iso, mean))) +
+      geom_point(color = "blue") +
+      geom_errorbarh(aes(xmin = lo, xmax = hi), height = 0.2, color = "blue", alpha = 0.6) +
+      labs(x = "alpha_c (posterior mean and 95% CI)", y = "") +
+      theme_minimal()
+    dev.off()
+  }
+
+  # 2) Coefficient forest plot for beta (if present)
+  beta_cols <- grep("^beta\
+
+\[", colnames(draws_mat), value = TRUE)
+  if (length(beta_cols) > 0) {
+    beta_mat <- draws_mat[, beta_cols, drop = FALSE]
+    beta_summary <- apply(beta_mat, 2, function(x) {
+      c(mean = mean(x), lo = quantile(x, 0.025), hi = quantile(x, 0.975))
+    }) %>% t() %>% as.data.frame()
+    beta_summary$term <- paste0("beta", seq_len(nrow(beta_summary)))
+    write_csv(beta_summary, file.path(OUT_DIR, paste0("beta_summary_method-", METHOD, ".csv")))
+
+    png(file.path(FIG_DIR, "beta_forest.png"), width = 900, height = 600)
+    ggplot(beta_summary, aes(x = mean, y = reorder(term, mean))) +
+      geom_point(color = "darkgreen") +
+      geom_errorbarh(aes(xmin = lo, xmax = hi), height = 0.2, color = "darkgreen", alpha = 0.6) +
+      labs(x = "beta (posterior mean and 95% CI)", y = "") +
+      theme_minimal()
+    dev.off()
+  }
+
+  # 3) Posterior predictive time-series ribbons (observed vs posterior mean + 95% CI)
+  # If EFS_pred is in draws (generated quantities), extract it; otherwise compute from draws
+  if ("EFS_pred" %in% dimnames(draws_array)$variable) {
+    # draws_array: draws × chains × variables; EFS_pred is vector of length N, named "EFS_pred[1]" etc.
+    efs_cols <- grep("^EFS_pred\
+
+\[", dimnames(draws_array)$variable, value = TRUE)
+    efs_mat <- as_draws_matrix(fit$draws())[, efs_cols, drop = FALSE]  # draws × N
+    # summarize per observation
+    pred_mean <- apply(efs_mat, 2, mean)
+    pred_lo   <- apply(efs_mat, 2, quantile, 0.025)
+    pred_hi   <- apply(efs_mat, 2, quantile, 0.975)
+  } else {
+    # fallback: compute from alpha_c, phi, beta, sigma draws (already available)
+    # compute posterior predictive mean only (no noise) for speed
+    pred_mean <- rep(NA_real_, N); pred_lo <- rep(NA_real_, N); pred_hi <- rep(NA_real_, N)
+    # compute using a subset of draws to save time if ndraws large
+    use_draws <- seq(1, nrow(draws_mat), length.out = min(1000, nrow(draws_mat))) %>% unique()
+    pred_draws_sub <- matrix(NA_real_, nrow = length(use_draws), ncol = N)
+    for (i in seq_along(use_draws)) {
+      d <- use_draws[i]
+      alpha_vec <- as.numeric(draws_mat[d, alpha_cols])
+      phi_d     <- as.numeric(draws_mat[d, "phi"])
+      beta_vec  <- if (length(beta_cols) > 0) as.numeric(draws_mat[d, beta_cols]) else numeric(0)
+      mu_vec <- alpha_vec[country_index] + phi_d * df_model$EFS_lag
+      if (length(beta_cols) > 0) mu_vec <- mu_vec + as.vector(stan_data$X %*% beta_vec)
+      pred_draws_sub[i, ] <- mu_vec
+    }
+    pred_mean <- apply(pred_draws_sub, 2, mean)
+    pred_lo   <- apply(pred_draws_sub, 2, quantile, 0.025)
+    pred_hi   <- apply(pred_draws_sub, 2, quantile, 0.975)
+  }
+
+  df_pp <- df_model %>%
+    mutate(EFS_pred_mean = pred_mean,
+           EFS_pred_lo   = pred_lo,
+           EFS_pred_hi   = pred_hi)
+
+  write_csv(df_pp, file.path(OUT_DIR, paste0("efs_bayes_posterior_summary_method-", METHOD, ".csv")))
+
+  # Plot a sample of countries with ribbons
+  set.seed(SEED)
+  sample_isos <- sample(unique(df_model$iso), size = min(6, length(unique(df_model$iso))))
+  for (iso_code in sample_isos) {
+    sub <- df_pp %>% filter(iso == iso_code)
+    pfile <- file.path(FIG_DIR, paste0(iso_code, "_posterior_ribbon.png"))
+    png(pfile, width = 1000, height = 600)
+    ggplot(sub, aes(x = year)) +
+      geom_ribbon(aes(ymin = EFS_pred_lo, ymax = EFS_pred_hi), fill = "lightblue", alpha = 0.4) +
+      geom_line(aes(y = EFS_pred_mean), color = "blue", size = 1) +
+      geom_point(aes(y = EFS), color = "black") +
+      geom_line(aes(y = EFS), color = "black", linetype = "dashed", alpha = 0.6) +
+      labs(title = paste0(sub$country[1], " (", iso_code, ") - observed vs posterior"),
+           y = "EFS", x = "Year") +
+      theme_minimal()
+    dev.off()
+  }
+
+  message("Enhanced diagnostics and plots saved to figures/bayes/ and outputs/")
 }
 
-message("Bayesian module complete. Inspect outputs/ and figures/bayes/ for results and diagnostics.")
 
-# ------------------ CAVEATS -------------------
-message("CAVEATS: VB is fast but underestimates variance. MCMC provides better uncerntainty but is slower. ")
-message("IF using VB for demos, consider running MCMC for final countries/regions of interest.")
