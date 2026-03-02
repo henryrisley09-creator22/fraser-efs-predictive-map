@@ -152,7 +152,7 @@ model {
       sigma
     );
   }
-}   // <-- THIS LINE FIXES THE ERROR
+}   
 generated quantities {
   vector[N] EFS_pred;
   for (n in 1:N)
@@ -299,21 +299,21 @@ last_obs <- df_model %>%
 
 # We'll compute forecast draws by using posterior draws and plugging in last_obs EFS_lag and last predictors
 message("Computing one-step-ahead forecasts for each country...")
-n_draws_used <- if (tolower(METHOD) == "mcmc") dim(draws$phi)[1] else nrow(draws_mat)
+n_draws_used <- if (tolower(METHOD) == "mcmc") length(phi_draws) else nrow(draws_mat)
 forecast_draws <- matrix(NA_real_, nrow = n_draws_used, ncol = nrow(last_obs))
 
 for (d in seq_len(n_draws_used)) {
   if (tolower(METHOD) == "mcmc") {
+    alpha_c_draw <- alpha_c_draws[d, ]
+    phi_draw     <- phi_draws[d]
+    sigma_draw   <- sigma_draws[d]
+    beta_draw    <- if (K > 0) beta_draws[d, ] else numeric(0)
+} else {
     alpha_c_draw <- draws$alpha_c[d, ]
-    phi_draw <- draws$phi[d]
-    sigma_draw <- draws$sigma[d]
-    beta_draw <- if (K>0) draws$beta[d, ] else numeric(0)
-  } else {
-    alpha_c_draw <- draws$alpha_c[d, ]
-    phi_draw <- draws$phi[d, 1]
-    sigma_draw <- draws$sigma[d, 1]
-    beta_draw <- if (K>0) draws$beta[d, ] else numeric(0)
-  }
+    phi_draw     <- draws$phi[d]
+    sigma_draw   <- draws$sigma[d]
+    beta_draw    <- if (K > 0) draws$beta[d, ] else numeric(0)
+}
   # compute mu for each country using last_obs EFS_lag and predictors
   mu_vec <- alpha_c_draw[as.integer(factor(last_obs$iso, levels = levels(country_factor)))] + phi_draw * last_obs$EFS
   if (K > 0) {
