@@ -125,15 +125,14 @@ data {
   matrix[N, K] X;
 }
 parameters {
-  vector[C] alpha_c;      // country intercepts
-  real alpha_0;           // global intercept
-  real phi;               // AR(1) coefficient
-  vector[K] beta;         // predictors
+  vector[C] alpha_c;
+  real alpha_0;
+  real phi;
+  vector[K] beta;
   real<lower=0> sigma;
   real<lower=0> tau;
 }
 model {
-  // Priors
   alpha_c ~ normal(alpha_0, tau);
   alpha_0 ~ normal(0, 1);
   if (K > 0) beta ~ normal(0, 1);
@@ -141,24 +140,28 @@ model {
   sigma ~ student_t(3, 0, 0.3);
   tau ~ student_t(3, 0, 0.3);
 
-  // Likelihood
   for (n in 1:N) {
     real xb = 0;
     if (K > 0)
-        xb = X[n] * beta;
+      xb = X[n] * beta;
 
     EFS[n] ~ normal(
-        alpha_c[country[n]] +
-        phi * EFS_lag[n] +
-        xb,
-        sigma
+      alpha_c[country[n]] +
+      phi * EFS_lag[n] +
+      xb,
+      sigma
     );
   }
-}
+}   // <-- THIS LINE FIXES YOUR ERROR
 generated quantities {
   vector[N] EFS_pred;
   for (n in 1:N)
-    EFS_pred[n] = normal_rng(alpha_c[country[n]] + phi * EFS_lag[n] + (K>0 ? X[n] * beta : 0), sigma);
+    EFS_pred[n] = normal_rng(
+      alpha_c[country[n]] +
+      phi * EFS_lag[n] +
+      (K > 0 ? X[n] * beta : 0),
+      sigma
+    );
 }
 "
 
