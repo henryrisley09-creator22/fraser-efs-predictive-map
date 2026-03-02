@@ -48,10 +48,10 @@ efs_col <- if ("EFS_pca" %in% names(df_all)) "EFS_pca" else if ("EFS_manual" %in
 # Prepare dataset: ensure needed columns exist, create lag, and pick predictor columns present
 df <- df_all %>%
   mutate(
-  iso = iso,
-  country = country
-)
-  mutate(year = as.integer(year)) %>%
+    iso = iso,
+    country = country,
+    year = as.integer(year)
+  ) %>%
   select(iso, country, year, all_of(efs_col), everything()) %>%
   rename(EFS = all_of(efs_col)) %>%
   arrange(iso, year) %>%
