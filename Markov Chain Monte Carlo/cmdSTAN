@@ -154,7 +154,6 @@ model {
         sigma
     );
   }
-}
 generated quantities {
   vector[N] EFS_pred;
   for (n in 1:N)
