@@ -152,7 +152,7 @@ model {
       sigma
     );
   }
-}   // <-- THIS LINE FIXES YOUR ERROR
+}   // <-- THIS LINE FIXES THE ERROR
 generated quantities {
   vector[N] EFS_pred;
   for (n in 1:N)
