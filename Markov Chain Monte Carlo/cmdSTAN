@@ -186,7 +186,7 @@ if (tolower(METHOD) == "mcmc") {
   # CmdStanR stores draws differently
   fit_samples <- fit$draws()
 }
-  fit_samples <- as.array(fit) # stanfit object
+  
 } else if (tolower(METHOD) == "vb") {
   message("Running Variational Bayes (fast, approx posterior; underestimates uncertainty)...")
   fit <- rstan::vb(stan_mod, data = stan_data, iter = VB_ITER, seed = SEED)
