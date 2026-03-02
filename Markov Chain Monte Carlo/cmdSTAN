@@ -153,8 +153,7 @@ model {
         xb,
         sigma
     );
-}
-
+  }
 }
 generated quantities {
   vector[N] EFS_pred;
