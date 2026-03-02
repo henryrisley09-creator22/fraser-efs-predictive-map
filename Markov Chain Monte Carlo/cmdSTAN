@@ -200,7 +200,21 @@ if (tolower(METHOD) == "mcmc") {
 # ---------------- Extract posterior draws and compute predictive summaries ----------------
 # We want posterior draws of alpha_c, alpha_0, phi, beta (if present), sigma, tau.
 if (tolower(METHOD) == "mcmc") {
-  draws <- fit$draws()
+  draws_array <- fit$draws()
+
+  # Extract parameters properly
+  phi_draws   <- draws_array[, , "phi"]
+  sigma_draws <- draws_array[, , "sigma"]
+  tau_draws   <- draws_array[, , "tau"]
+
+  # alpha_c and beta are vectors, so extract all matching names
+  varnames <- dimnames(draws_array)$variable
+  alpha_idx <- grepl("^alpha_c", varnames)
+  beta_idx  <- grepl("^beta", varnames)
+
+  alpha_c_draws <- draws_array[, , alpha_idx, drop = FALSE]
+  beta_draws    <- draws_array[, , beta_idx, drop = FALSE]
+
 } else {
   # vb returns matrices; use as.matrix and parse names
   draws_mat <- as.matrix(fit)
@@ -243,16 +257,16 @@ if (is.na(ndraws) || ndraws == 0) {
   efs_pred_draws <- matrix(NA_real_, nrow = ndraws, ncol = N)
   for (d in seq_len(ndraws)) {
     if (tolower(METHOD) == "mcmc") {
-      alpha_c_draw <- draws$alpha_c[d, ]
-      phi_draw <- draws$phi[d]
-      sigma_draw <- draws$sigma[d]
-      beta_draw <- if (K>0) draws$beta[d, ] else numeric(0)
+     alpha_c_draw <- alpha_c_draws[d, ]
+     phi_draw     <- phi_draws[d]
+     sigma_draw   <- sigma_draws[d]
+     beta_draw    <- if (K > 0) beta_draws[d, ] else numeric(0)
     } else {
       # vb draws parsed earlier
-      alpha_c_draw <- draws$alpha_c[d, ]
-      phi_draw <- draws$phi[d, 1]
-      sigma_draw <- draws$sigma[d, 1]
-      beta_draw <- if (K>0) draws$beta[d, ] else numeric(0)
+     alpha_c_draw <- alpha_c_draws[d, ]
+     phi_draw     <- phi_draws[d]
+     sigma_draw   <- sigma_draws[d]
+     beta_draw    <- if (K > 0) beta_draws[d, ] else numeric(0)
     }
     mu_vec <- alpha_c_draw[country_index] + phi_draw * stan_data$EFS_lag
     if (K > 0) mu_vec <- mu_vec + as.vector(stan_data$X %*% beta_draw)
