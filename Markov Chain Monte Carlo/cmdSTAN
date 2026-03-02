@@ -261,24 +261,33 @@ if (is.na(ndraws) || ndraws == 0) {
   # Preallocate
   efs_pred_draws <- matrix(NA_real_, nrow = ndraws, ncol = N)
   for (d in seq_len(ndraws)) {
-    if (tolower(METHOD) == "mcmc") {
-     alpha_c_draw <- alpha_c_draws[d, ]
-     phi_draw     <- phi_draws[d]
-     sigma_draw   <- sigma_draws[d]
-     beta_draw    <- if (K > 0) beta_draws[d, ] else numeric(0)
-    } else {
-      # vb draws parsed earlier
-     alpha_c_draw <- alpha_c_draws[d, ]
-     phi_draw     <- phi_draws[d]
-     sigma_draw   <- sigma_draws[d]
-     beta_draw    <- if (K > 0) beta_draws[d, ] else numeric(0)
-    }
-    mu_vec <- alpha_c_draw[country_index] + phi_draw * stan_data$EFS_lag
-    if (K > 0) mu_vec <- mu_vec + as.vector(stan_data$X %*% beta_draw)
-    # include observation noise
-    efs_pred_draws[d, ] <- rnorm(N, mean = mu_vec, sd = abs(sigma_draw))
-  }
+    # number of draws
+if (tolower(METHOD) == "mcmc") {
+  ndraws <- length(phi_draws)
+} else {
+  ndraws <- nrow(draws_mat)
 }
+
+efs_pred_draws <- matrix(NA_real_, nrow = ndraws, ncol = N)
+
+for (d in seq_len(ndraws)) {
+  if (tolower(METHOD) == "mcmc") {
+    alpha_c_draw <- alpha_c_draws[d, ]
+    phi_draw     <- phi_draws[d]
+    sigma_draw   <- sigma_draws[d]
+    beta_draw    <- if (K > 0) beta_draws[d, ] else numeric(0)
+  } else {
+    alpha_c_draw <- draws$alpha_c[d, ]
+    phi_draw     <- draws$phi[d, 1]
+    sigma_draw   <- draws$sigma[d, 1]
+    beta_draw    <- if (K > 0) draws$beta[d, ] else numeric(0)
+  }
+  mu_vec <- alpha_c_draw[country_index] + phi_draw * stan_data$EFS_lag
+  if (K > 0) mu_vec <- mu_vec + as.vector(stan_data$X %*% beta_draw)
+
+  efs_pred_draws[d, ] <- rnorm(N, mean = mu_vec, sd = abs(sigma_draw))
+}
+
 
 # Summarize posterior predictions
 pred_mean <- apply(efs_pred_draws, 2, mean)
