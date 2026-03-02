@@ -235,8 +235,13 @@ if (tolower(METHOD) == "mcmc") {
 
 # Build posterior predictive samples for each observation via draws (safe approach)
 # We'll compute posterior predictive mean & 95% intervals for EFS_pred as generated quantities (if available) or compute directly.
-if (tolower(METHOD) == "mcmc" && "EFS_pred" %in% names(draws)) {
-  efs_pred_draws <- draws$EFS_pred # draws x N
+if (tolower(METHOD) == "mcmc") {
+  # CmdStanR: generated quantities are already in draws_array
+  if ("EFS_pred" %in% dimnames(draws_array)$variable) {
+    efs_pred_draws <- draws_array[, , "EFS_pred"]
+  } else {
+    efs_pred_draws <- NULL
+  }
 } else {
   # compute EFS_pred draws manually: for each draw, compute alpha_c[country] + phi*lag + X*beta + noise
   message("Computing posterior predictive draws manually (may take a moment)...")
@@ -244,7 +249,7 @@ if (tolower(METHOD) == "mcmc" && "EFS_pred" %in% names(draws)) {
 N <- as.numeric(nrow(df_model))  # number of observations
 
 if (tolower(METHOD) == "mcmc") {
-  ndraws <- length(draws$phi)
+  ndraws <- length(phi_draws)
 } else {
   ndraws <- nrow(as.matrix(draws_mat))
 }
