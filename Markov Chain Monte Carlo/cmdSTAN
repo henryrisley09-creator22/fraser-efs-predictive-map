@@ -309,10 +309,10 @@ for (d in seq_len(n_draws_used)) {
     sigma_draw   <- sigma_draws[d]
     beta_draw    <- if (K > 0) beta_draws[d, ] else numeric(0)
 } else {
-    alpha_c_draw <- draws$alpha_c[d, ]
-    phi_draw     <- draws$phi[d]
-    sigma_draw   <- draws$sigma[d]
-    beta_draw    <- if (K > 0) draws$beta[d, ] else numeric(0)
+    alpha_c_draw <- alpha_c_draws[d, ]
+    phi_draw     <- phi_draws[d]
+    sigma_draw   <- sigma_draws[d]
+    beta_draw    <- if (K > 0) beta_draws[d, ] else numeric(0)
 }
   # compute mu for each country using last_obs EFS_lag and predictors
   mu_vec <- alpha_c_draw[as.integer(factor(last_obs$iso, levels = levels(country_factor)))] + phi_draw * last_obs$EFS
