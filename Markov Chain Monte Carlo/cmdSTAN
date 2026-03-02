@@ -369,7 +369,14 @@ message("Saved forecast top10 and full forecasts to outputs/")
 
 # ---------------- Diagnostic plot: random sample of countries -----------------
 set.seed(SEED)
-sample_isos <- sample(unique(df_model$iso), size = min(6, length(unique(df_model$iso))))
+isos_available <- unique(df_model$iso)
+
+if (length(isos_available) == 0) {
+  message("No countries available for plotting — df_model is empty.")
+  sample_isos <- character(0)
+} else {
+  sample_isos <- sample(isos_available, size = min(6, length(isos_available)))
+}
 
 for (iso_code in sample_isos) {
   sub_hist <- df_model %>% filter(iso == iso_code)
