@@ -6,7 +6,8 @@ suppressPackageStartupMessages({
   library(purrr)
 })
 
-# ------------------ CONFIGURATION ------------------
+# CONFIGURATION
+
 YEARS_AHEAD <- 5          # how many years to project
 DATA_DIR <- "data"
 OUTPUT_FILE <- file.path(DATA_DIR, "future_covariates.csv")
@@ -14,7 +15,8 @@ OUTPUT_FILE <- file.path(DATA_DIR, "future_covariates.csv")
 # Ensure directory exists
 dir.create(DATA_DIR, showWarnings = FALSE, recursive = TRUE)
 
-# ------------------ LOAD HISTORICAL PANEL ------------------
+# LOAD HISTORICAL PANEL 
+
 if (!file.exists(file.path(DATA_DIR, "df_panel_raw.rds"))) {
   stop("Run 0_load_data.R first to create data/df_panel_raw.rds")
 }
@@ -22,7 +24,7 @@ if (!file.exists(file.path(DATA_DIR, "df_panel_raw.rds"))) {
 df_hist <- readRDS(file.path(DATA_DIR, "df_panel_raw.rds")) %>%
   rename_with(tolower)
 
-# ------------------ HANDLE YEAR COLUMN ------------------
+# HANDLE YEAR COLUMN 
 if (!"year" %in% names(df_hist)) {
   possible_year_col <- names(df_hist)[grepl("year", names(df_hist), ignore.case = TRUE)]
   if (length(possible_year_col) > 0) {
@@ -32,7 +34,7 @@ if (!"year" %in% names(df_hist)) {
   }
 }
 
-# ------------------ DEFINE TARGET PREDICTORS ------------------
+# DEFINE TARGET PREDICTORS 
 predictors <- c("inflation", "gdp_growth", "reg_quality", "trade_open", "fiscal_balance")
 
 # Keep only existing predictors
@@ -51,7 +53,7 @@ if (length(present_predictors) == 0) {
   present_predictors <- predictors
 }
 
-# ------------------ SELECT LATEST YEAR PER COUNTRY ------------------
+# SELECT LATEST YEAR PER COUNTRY 
 df_latest <- df_hist %>%
   filter(!is.na(year)) %>%
   group_by(iso_code) %>%
@@ -59,7 +61,7 @@ df_latest <- df_hist %>%
   ungroup() %>%
   select(iso_code, countries, year, all_of(present_predictors))
 
-# ------------------ SIMPLE PROJECTION MODEL ------------------
+# SIMPLE PROJECTION MODEL 
 set.seed(2025)
 future_years <- max(df_latest$year, na.rm = TRUE) + seq_len(YEARS_AHEAD)
 
@@ -82,7 +84,7 @@ df_future <- df_latest %>%
   }) %>%
   ungroup()
 
-# ------------------ COMBINE HISTORICAL + FUTURE ------------------
+# COMBINE HISTORICAL + FUTURE 
 
 # Tag both datasets before combining
 df_hist_tagged <- df_hist %>%
@@ -96,7 +98,7 @@ df_future_tagged <- df_future %>%
 # Combine with consistent column order
 df_combined <- bind_rows(df_hist_tagged, df_future_tagged)
 
-# ------------------ SAVE RESULTS ------------------
+# SAVE RESULTS 
 write_csv(df_combined, OUTPUT_FILE)
 saveRDS(df_combined, file.path(DATA_DIR, "future_covariates.rds"))
 
