@@ -9,7 +9,7 @@ suppressPackageStartupMessages({
 rstan_options(auto_write = TRUE)
 options(mc.cores = max(1, parallel::detectCores() - 1))
 
-# ---------------- PARAMETERS ----------------
+#  PARAMETERS 
 METHOD <- "mcmc"
 CHAINS <- 2
 ITER <- 1000
@@ -24,7 +24,7 @@ FIG_DIR <- file.path("figures", "bayes")
 dir.create(OUT_DIR, showWarnings = FALSE, recursive = TRUE)
 dir.create(FIG_DIR, showWarnings = FALSE, recursive = TRUE)
 
-# ---------------- Choose micro / macro predictor variables (edit as needed) ----------------
+# Choose micro / macro predictor variables 
 # These must be column names in data/df_scores.rds (case-sensitive). If empty, model uses only EFS_lag.
 MICRO_VARS <- c(
   "gdp_growth",
@@ -38,7 +38,7 @@ MICRO_VARS <- c(
 # example names
 # If your dataset has different column names, put them here. The script will drop missing ones.
 
-# ---------------- Load scored panel (produced by your pipeline) ----------------
+# Load scored panel (produced by your pipeline)
 if (!file.exists("data/df_scores.rds")) stop("Run 2_compute_scores.R first to produce data/df_scores.rds")
 df_all <- readRDS("data/df_scores.rds") %>% as_tibble()
 
@@ -113,7 +113,7 @@ stan_data <- list(
   X = if (K > 0) X_matrix else array(0, dim = c(N, 0))
 )
 
-# ---------------- STAN MODEL CODE ----------------
+# STAN MODEL CODE 
 stan_code <- "
 data {
   int<lower=1> N;
@@ -171,7 +171,7 @@ generated quantities {
 }
 "
 
-# ---------------- Extract posterior draws and compute predictive summaries ----------------
+# Extract posterior draws and compute predictive summaries 
 # We want posterior draws of alpha_c, alpha_0, phi, beta (if present), sigma, tau.
 if (tolower(METHOD) == "mcmc") {
   message("Running enhanced MCMC diagnostics and posterior visualizations...")
@@ -204,7 +204,7 @@ if (tolower(METHOD) == "mcmc") {
   write_csv(diag_df %>% filter(flag_rhat | flag_ess),
             file.path(OUT_DIR, paste0("mcmc_diagnostics_flags_method-", METHOD, ".csv")))
 
-  # ---------------- Classic MCMC plots ----------------
+  # Classic MCMC plots 
   posterior_array <- as_draws_array(fit$draws())  # bayesplot works with arrays
 
   # Trace + density for core params
@@ -237,7 +237,7 @@ if (tolower(METHOD) == "mcmc") {
   bayesplot::mcmc_pairs(posterior_array, pars = core_pars, off_diag_args = list(size = 0.5))
   dev.off()
 
-  # ---------------- Posterior summaries and plots ----------------
+  # Posterior summaries and plots 
 
   # 1) Caterpillar plot for alpha_c (country intercepts)
   alpha_cols <- grep("^alpha_c\
