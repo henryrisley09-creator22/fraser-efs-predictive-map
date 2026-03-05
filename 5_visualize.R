@@ -6,11 +6,11 @@ library(dplyr)
 library(readr)
 library(scales)
 
-# ---------------- Load latest bootstrapped EFS data ----------------
+# Load latest bootstrapped EFS data 
 latest_year <- max(readr::parse_number(list.files("outputs", pattern = "efw_scores_.*csv")), na.rm = TRUE)
 df_ci <- readr::read_csv(list.files("outputs", pattern = "efw_scores_bootstrap_.*csv", full.names = TRUE)[1])
 
-# ---------------- Top 10 Countries by Mean EFS ----------------
+# Top 10 Countries by Mean EFS 
 top10 <- df_ci %>% arrange(desc(EFS_pca_mean)) %>% head(10)
 
 p1 <- ggplot(top10, aes(x = reorder(country, EFS_pca_mean), y = EFS_pca_mean)) +
@@ -24,7 +24,7 @@ p1 <- ggplot(top10, aes(x = reorder(country, EFS_pca_mean), y = EFS_pca_mean)) +
 dir.create("figures", showWarnings = FALSE, recursive = TRUE)
 ggsave("figures/top10_efs_ci.png", p1, width = 8, height = 6, dpi = 150)
 
-# ---------------- Example: Time Series for a Single Country (USA) ----------------
+# Example: Time Series for a Single Country (USA) 
 df_scores_all <- readRDS("data/df_scores.rds")
 
 country_ts <- df_scores_all %>%
@@ -39,7 +39,7 @@ p2 <- ggplot(country_ts, aes(x = year, y = EFS_pca)) +
   theme_minimal(base_size = 13)
 ggsave("figures/usa_time_series.png", p2, width = 8, height = 4, dpi = 150)
 
-# ---------------- Bayesian Forecast Visualization ----------------
+#  Bayesian Forecast Visualization 
 # This section produces country-level forecast plots with posterior uncertainty bands
 # (requires df_model and df_out from your Bayesian model run)
 
