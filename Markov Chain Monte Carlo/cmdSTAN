@@ -9,7 +9,7 @@ suppressPackageStartupMessages({
 rstan_options(auto_write = TRUE)
 options(mc.cores = max(1, parallel::detectCores() - 1))
 
-# ---------------- PARAMETERS ----------------
+# PARAMETERS 
 METHOD <- "mcmc"
 CHAINS <- 2
 ITER <- 1000
@@ -24,7 +24,7 @@ FIG_DIR <- file.path("figures", "bayes")
 dir.create(OUT_DIR, showWarnings = FALSE, recursive = TRUE)
 dir.create(FIG_DIR, showWarnings = FALSE, recursive = TRUE)
 
-# ---------------- Choose micro / macro predictor variables (edit as needed) ----------------
+# Choose micro / macro predictor variables 
 # These must be column names in data/df_scores.rds (case-sensitive). If empty, model uses only EFS_lag.
 MICRO_VARS <- c(
   "gdp_growth",
@@ -38,7 +38,7 @@ MICRO_VARS <- c(
 # example names
 # If your dataset has different column names, put them here. The script will drop missing ones.
 
-# ---------------- Load scored panel (produced by your pipeline) ----------------
+# Load scored panel 
 if (!file.exists("data/df_scores.rds")) stop("Run 2_compute_scores.R first to produce data/df_scores.rds")
 df_all <- readRDS("data/df_scores.rds") %>% as_tibble()
 
@@ -113,7 +113,7 @@ stan_data <- list(
   X = if (K > 0) X_matrix else array(0, dim = c(N, 0))
 )
 
-# ---------------- STAN MODEL CODE ----------------
+# STAN MODEL CODE 
 stan_code <- "
 data {
   int<lower=1> N;
@@ -197,7 +197,7 @@ if (tolower(METHOD) == "mcmc") {
   stop("METHOD must be 'mcmc' or 'vb'")
 }
 
-# ---------------- Extract posterior draws and compute predictive summaries ----------------
+# Extract posterior draws and compute predictive summaries 
 # We want posterior draws of alpha_c, alpha_0, phi, beta (if present), sigma, tau.
 if (tolower(METHOD) == "mcmc") {
   draws_array <- fit$draws()
@@ -303,7 +303,7 @@ df_out <- df_model %>%
 # Save full posterior summary (historical obs + predictive dist)
 write_csv(df_out, file.path(OUT_DIR, paste0("efs_bayes_posterior_summary_method-", METHOD, ".csv")))
 
-# ---------------- One-step ahead forecast for each country ----------------
+# One-step ahead forecast for each country 
 # For each country, create a new row with year = last_year+1, EFS_lag = last observed EFS and predictors = last observed predictors (already in df_model)
 last_obs <- df_model %>%
   group_by(iso) %>%
@@ -367,7 +367,7 @@ forecast_summary <- forecast_df %>%
 write_csv(forecast_summary, file.path(OUT_DIR, paste0("efs_bayes_forecast_top10_method-", METHOD, ".csv")))
 message("Saved forecast top10 and full forecasts to outputs/")
 
-# ---------------- Diagnostic plot: random sample of countries -----------------
+# Diagnostic plot: random sample of countries 
 set.seed(SEED)
 isos_available <- unique(df_model$iso)
 
@@ -394,6 +394,6 @@ for (iso_code in sample_isos) {
 
 message("Bayesian module complete. Inspect outputs/ and figures/bayes/ for results and diagnostics.")
 
-# ------------------ CAVEATS -------------------
+# CAVEATS
 message("CAVEATS: VB is fast but underestimates variance. MCMC provides better uncerntainty but is slower. ")
 message("IF using VB for demos, consider running MCMC for final countries/regions of interest.")
